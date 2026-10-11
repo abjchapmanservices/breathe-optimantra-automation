@@ -22,6 +22,25 @@ def validate_config(env):
         raise RuntimeError("Credentials are not available")
 
 
+def wait_for_prompt_in_frames(page, fragment, timeout_ms=20000):
+    """Look for a visible report prompt in main page or embedded report frames.
+
+    Never logs frame URLs, labels, HTML, patient information, or screenshots.
+    """
+    import time
+    deadline = time.monotonic() + timeout_ms / 1000
+    while time.monotonic() < deadline:
+        for frame in page.frames:
+            try:
+                locator = frame.get_by_text(fragment, exact=False).first
+                if locator.count() and locator.is_visible():
+                    return
+            except Exception:
+                continue
+        page.wait_for_timeout(300)
+    raise RuntimeError("Report prompt not visible")
+
+
 def run():
     validate_config(os.environ)
     from playwright.sync_api import sync_playwright
@@ -119,13 +138,9 @@ def run():
                         stage = "open_date_filter"
                         page.get_by_text("Change Date Filter", exact=True).first.click()
                         stage = "verify_start_date_prompt"
-                        page.get_by_text(
-                            "Starting Date for Period", exact=False
-                        ).first.wait_for(state="visible", timeout=15000)
+                        wait_for_prompt_in_frames(page, "Starting Date for Period")
                         stage = "verify_end_date_prompt"
-                        page.get_by_text(
-                            "Ending Date for Period", exact=False
-                        ).first.wait_for(state="visible", timeout=15000)
+                        wait_for_prompt_in_frames(page, "Ending Date for Period")
                         print("PASS: Date filter prompts visible. No report run or exported.", flush=True)
                     else:
                         print("PASS: Financial report selected. No report run or exported.", flush=True)
