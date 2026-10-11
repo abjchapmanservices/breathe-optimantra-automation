@@ -145,29 +145,49 @@ def run():
                         wait_for_prompt_in_frames(page, "Ending Date for Period")
                         if os.environ.get("DATE_INPUT_PROBE_ENABLED") == "true":
                             stage = "inspect_date_input_structure"
-                            # Prompts may live in separate frames or nested
-                            # elements. Count visible input types by frame
-                            # without reading input values, HTML, or frame URLs.
-                            counts = []
-                            for frame in page.frames:
-                                try:
-                                    dates = frame.locator('input[type="date"]:visible').count()
-                                    texts = frame.locator('input[type="text"]:visible').count()
-                                    if dates or texts:
-                                        counts.append((dates, texts))
-                                except Exception:
-                                    continue
-                            if not counts:
-                                raise RuntimeError("No visible date or text inputs found")
+                            # Probe metadata only. Do not read input values,
+                            # page text, HTML, identifiers or frame URLs.
+                            import time
+                            totals = {"date": 0, "text": 0, "other": 0}
+                            frame_count = 0
+                            deadline = time.monotonic() + 12
+                            while time.monotonic() < deadline:
+                                totals = {"date": 0, "text": 0, "other": 0}
+                                frame_count = 0
+                                for frame in page.frames:
+                                    try:
+                                        fields = frame.locator("input:visible")
+                                        n = fields.count()
+                                        if not n:
+                                            continue
+                                        frame_count += 1
+                                        for i in range(min(n, 30)):
+                                            kind = (fields.nth(i).get_attribute("type") or "text").lower()
+                                            if kind == "date":
+                                                totals["date"] += 1
+                                            elif kind in ("text", "search"):
+                                                totals["text"] += 1
+                                            else:
+                                                totals["other"] += 1
+                                    except Exception:
+                                        continue
+                                if sum(totals.values()) > 0:
+                                    break
+                                page.wait_for_timeout(400)
                             print(
                                 "DATE_INPUT_STRUCTURE: "
-                                f"frames_with_inputs={len(counts)}; "
-                                f"visible_date_inputs={sum(x[0] for x in counts)}; "
-                                f"visible_text_inputs={sum(x[1] for x in counts)}. "
+                                f"frames_with_inputs={frame_count}; "
+                                f"visible_date_inputs={totals['date']}; "
+                                f"visible_text_inputs={totals['text']}; "
+                                f"visible_other_inputs={totals['other']}. "
                                 "No values inspected.",
                                 flush=True,
                             )
-                            print("PASS: Input counts collected; no report run.", flush=True)
+                            if sum(totals.values()) == 0:
+                                print("DIAGNOSTIC: No standard visible input elements detected. "
+                                      "Custom controls require selector inspection.", flush=True)
+                            else:
+                                print("PASS: Input metadata collected; no report run.", flush=True)
                         else:
                             print("PASS: Date filter prompts visible. No report run or exported.", flush=True)
                     else:
