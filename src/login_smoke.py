@@ -51,31 +51,56 @@ def wait_for_prompt_in_frames(page, fragment, timeout_ms=20000):
 
 
 def fill_known_report_dates(page, iso_date):
-    """Fill only the two exact inspected selectors, never submit the report."""
+    """Fill two inspected fields; emit no values, HTML or browser errors."""
     from src.report_parameters import reporting_date, report_dates
     formatted, _ = report_dates(reporting_date(iso_date))
-    selectors = ("#id_mstr40_txt", "#id_mstr47_txt")
     matched = []
-    for selector in selectors:
+    for label, selector in (
+        ("start", "#id_mstr40_txt"),
+        ("end", "#id_mstr47_txt"),
+    ):
         candidates = []
         for frame in page.frames:
-            control = frame.locator(selector)
-            if control.count() == 1:
-                candidates.append(control)
+            try:
+                control = frame.locator(selector)
+                if control.count() == 1:
+                    candidates.append(control)
+            except Exception:
+                continue
+        print(
+            f"DATE_FILL_DIAGNOSTIC: field={label}; phase=selector; "
+            f"matches={len(candidates)}",
+            flush=True,
+        )
         if len(candidates) != 1:
-            raise RuntimeError("Date selector did not match exactly one element")
-        matched.append(candidates[0])
-    for control in matched:
-        if not control.is_visible() or not control.is_enabled():
-            raise RuntimeError("Date input not editable; verify Your selection is selected")
-    for control in matched:
+            raise RuntimeError("Date input selector not unique")
+        matched.append((label, candidates[0]))
+    for label, control in matched:
+        visible = control.is_visible()
+        enabled = control.is_enabled()
+        print(
+            f"DATE_FILL_DIAGNOSTIC: field={label}; phase=editable; "
+            f"visible={str(visible).lower()}; enabled={str(enabled).lower()}",
+            flush=True,
+        )
+        if not visible or not enabled:
+            raise RuntimeError("Date field is not editable")
+    for label, control in matched:
+        print(f"DATE_FILL_DIAGNOSTIC: field={label}; phase=fill_attempt", flush=True)
         control.fill(formatted, timeout=8000)
+        print(f"DATE_FILL_DIAGNOSTIC: field={label}; phase=filled", flush=True)
         control.press("Tab")
-    for control in matched:
-        if control.input_value().strip() != formatted:
-            raise RuntimeError("Date value did not match expected format")
+        print(f"DATE_FILL_DIAGNOSTIC: field={label}; phase=blurred", flush=True)
+    for label, control in matched:
+        correct = control.input_value().strip() == formatted
+        print(
+            f"DATE_FILL_DIAGNOSTIC: field={label}; phase=verify; "
+            f"matches_expected={str(correct).lower()}",
+            flush=True,
+        )
+        if not correct:
+            raise RuntimeError("Date input verification failed")
     return True
-
 
 def run():
     validate_config(os.environ)
