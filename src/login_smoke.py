@@ -31,22 +31,23 @@ def run():
             page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
             if urlparse(page.url).hostname != "www.optimantra.com":
                 raise RuntimeError("Unexpected origin")
+            stage = "select_practitioner_login"
+            practitioner = page.get_by_role("button", name="Practitioner login")
+            if practitioner.count() == 1 and practitioner.is_visible():
+                practitioner.click()
             stage = "locate_login_fields"
-            email = page.get_by_role("textbox", name="Email")
-            password = page.get_by_label("Password", exact=True)
-            if email.count() != 1 or password.count() != 1:
-                raise RuntimeError("Fields not unique")
+            # The page includes hidden password-reset forms with duplicate Email\n            # and Password fields. Restrict matching to the visible login form.\n            email = page.locator("input[type=email]:visible")\n            if email.count() != 1:\n                email = page.get_by_role("textbox", name="Email").filter(visible=True)\n            password = page.locator("input[type=password]:visible")\n            if email.count() != 1 or password.count() != 1:\n                raise RuntimeError("Visible login fields not unique")
             stage = "fill_credentials"
             email.fill(os.environ["OPTIMANTRA_USERNAME"])
             password.fill(os.environ["OPTIMANTRA_PASSWORD"])
             stage = "locate_agreement"
-            agreement = page.get_by_role("checkbox")
+            agreement = page.get_by_role("checkbox").filter(visible=True)
             if agreement.count() != 1:
                 raise RuntimeError("Agreement not unique")
             stage = "confirm_agreement"
             agreement.check()
             stage = "locate_submit"
-            submit = page.get_by_role("button", name="Log in", exact=True)
+            submit = page.get_by_role("button", name="Log in", exact=True).filter(visible=True)
             if submit.count() != 1:
                 raise RuntimeError("Submit not unique")
             stage = "submit_login"
