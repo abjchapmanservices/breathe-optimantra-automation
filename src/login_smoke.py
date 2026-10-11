@@ -154,23 +154,18 @@ def run_report_smoke(page):
     buttons = []
     for frame in page.frames:
         try:
-            for query in (
-                frame.get_by_role("button", name="Run Report", exact=True),
-                frame.locator('input[type="button"][value="Run Report"]'),
-                frame.locator('input[type="submit"][value="Run Report"]'),
-            ):
-                for i in range(min(query.count(), 5)):
-                    item = query.nth(i)
-                    if item.is_visible() and item.is_enabled():
-                        buttons.append(item)
+            query = frame.locator('input[type="button"][value="Run Report"], input[type="submit"][value="Run Report"], button:has-text("Run Report")')
+            for i in range(min(query.count(), 5)):
+                item = query.nth(i)
+                if item.is_visible() and item.is_enabled():
+                    buttons.append(item)
         except Exception:
             continue
-    # Deduplicate alternative selectors by using one selector strategy first.
-    unique = buttons[:1] if len(buttons) == 1 else []
     print(f"REPORT_RUN_DIAGNOSTIC: visible_button_matches={len(buttons)}",
           file=sys.stderr, flush=True)
-    if len(unique) != 1:
+    if len(buttons) != 1:
         raise RuntimeError("Run Report control requires inspection")
+    unique = buttons
     unique[0].click(timeout=8000)
     print("REPORT_RUN_DIAGNOSTIC: submitted=true; export_attempted=false",
           file=sys.stderr, flush=True)
