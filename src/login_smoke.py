@@ -10,6 +10,8 @@ from src.optimantra_login import LOGIN_URL
 
 
 def validate_config(env):
+    if env.get("REPORT_RUN_SMOKE_ENABLED") == "true" and env.get("DATE_FILL_SMOKE_ENABLED") != "true":
+        raise RuntimeError("Report run smoke requires verified date fill")
     if env.get("DATE_FILL_SMOKE_ENABLED") == "true":
         if env.get("DATE_FILTER_SMOKE_ENABLED") != "true" or env.get("NAVIGATION_SMOKE_ENABLED") != "true" or env.get("REPORT_SELECTION_SMOKE_ENABLED") != "true":
             raise RuntimeError("Date fill requires date filter and report selection")
@@ -146,6 +148,37 @@ def fill_known_report_dates(page, iso_date):
             raise RuntimeError("Date input verification failed")
     return True
 
+def run_report_smoke(page):
+    """Submit the already-verified date filter; do not export or log results."""
+    import sys
+    buttons = []
+    for frame in page.frames:
+        try:
+            for query in (
+                frame.get_by_role("button", name="Run Report", exact=True),
+                frame.locator('input[type="button"][value="Run Report"]'),
+                frame.locator('input[type="submit"][value="Run Report"]'),
+            ):
+                for i in range(min(query.count(), 5)):
+                    item = query.nth(i)
+                    if item.is_visible() and item.is_enabled():
+                        buttons.append(item)
+        except Exception:
+            continue
+    # Deduplicate alternative selectors by using one selector strategy first.
+    unique = buttons[:1] if len(buttons) == 1 else []
+    print(f"REPORT_RUN_DIAGNOSTIC: visible_button_matches={len(buttons)}",
+          file=sys.stderr, flush=True)
+    if len(unique) != 1:
+        raise RuntimeError("Run Report control requires inspection")
+    unique[0].click(timeout=8000)
+    print("REPORT_RUN_DIAGNOSTIC: submitted=true; export_attempted=false",
+          file=sys.stderr, flush=True)
+    # No patient-data content read or logged. A later gated stage will validate
+    # report completion and the export toolbar.
+    return True
+
+
 def run():
     validate_config(os.environ)
     from playwright.sync_api import sync_playwright
@@ -249,7 +282,12 @@ def run():
                         if os.environ.get("DATE_FILL_SMOKE_ENABLED") == "true":
                             stage = "fill_date_fields"
                             fill_known_report_dates(page, os.environ["REPORT_DATE"])
-                            print("PASS: Both reporting dates entered and verified. Report not run.", flush=True)
+                            if os.environ.get("REPORT_RUN_SMOKE_ENABLED") == "true":
+                                stage = "submit_report"
+                                run_report_smoke(page)
+                                print("PASS: Report submitted. No export or download attempted.", flush=True)
+                            else:
+                                print("PASS: Both reporting dates entered and verified. Report not run.", flush=True)
                         elif os.environ.get("DATE_FIELD_MAPPING_PROBE_ENABLED") == "true":
                             stage = "map_date_field_candidates"
                             # Structural metadata only. No values, IDs, names,
