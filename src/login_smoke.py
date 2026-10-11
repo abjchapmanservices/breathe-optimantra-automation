@@ -265,9 +265,37 @@ def open_export_dialog_smoke(page):
     )
     if len(dialog_frames) != 1:
         raise RuntimeError("Export dialog default choices not uniquely found")
+    # Check default settings by control state, not just visible labels.
+    # Inspect only export-option controls; never read report data.
+    frame = dialog_frames[0]
+    defaults = frame.evaluate("""() => {
+        const selects = [...document.querySelectorAll('select')];
+        const whole = selects.filter(select => {
+            const option = select.selectedOptions && select.selectedOptions[0];
+            return option && option.textContent.trim() === 'Whole report';
+        });
+        const csvTextNodes = [...document.querySelectorAll('label, td, span')]
+            .filter(node => node.children.length === 0
+                && node.textContent.trim() === 'CSV file format');
+        const csvChecked = csvTextNodes.some(node => {
+            const parent = node.closest('label, tr, td, div');
+            const radio = parent && parent.querySelector('input[type=radio]');
+            return !!(radio && radio.checked);
+        });
+        return {wholeCount: whole.length, csvLabels: csvTextNodes.length,
+                csvChecked};
+    }""")
     print(
-        "PASS: Export dialog opened; expected Whole report and CSV options visible. "
-        "No final export or download attempted.",
+        "EXPORT_DIALOG_DIAGNOSTIC: phase=default_selection; "
+        f"whole_selected={defaults['wholeCount'] == 1}; "
+        f"csv_label_found={defaults['csvLabels'] > 0}; "
+        f"csv_checked={defaults['csvChecked']}",
+        file=sys.stderr, flush=True,
+    )
+    if defaults["wholeCount"] != 1 or not defaults["csvChecked"]:
+        raise RuntimeError("Export defaults not confirmed; do not download")
+    print(
+        "PASS: Export defaults verified; no download attempted.",
         flush=True,
     )
 
