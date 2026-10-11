@@ -10,6 +10,8 @@ from src.optimantra_login import LOGIN_URL
 
 
 def validate_config(env):
+    if env.get("REPORT_SELECTION_SMOKE_ENABLED") == "true" and env.get("NAVIGATION_SMOKE_ENABLED") != "true":
+        raise RuntimeError("Report selection requires navigation")
     if env.get("LOGIN_SMOKE_ENABLED") != "true":
         raise RuntimeError("Login test is not enabled")
     if env.get("OPTIMANTRA_TERMS_APPROVED") != "true":
@@ -86,7 +88,34 @@ def run():
                 page.get_by_text("Financials by Category", exact=True).first.wait_for(
                     state="visible", timeout=15000
                 )
-                print("PASS: Report list visible. No report opened.", flush=True)
+                if os.environ.get("REPORT_SELECTION_SMOKE_ENABLED") == "true":
+                    stage = "locate_report_family"
+                    category = page.get_by_text("Financials by Category", exact=True).first
+                    family = page.get_by_text(
+                        "Summary of Category (Type/Subtype) Charges and Payments", exact=True
+                    ).first
+                    if not family.is_visible():
+                        stage = "expand_report_category"
+                        category.click()
+                        family.wait_for(state="visible", timeout=10000)
+                    stage = "expand_report_family"
+                    target = page.get_by_text(
+                        "+ With Patient, Provider, and Date of Payment", exact=True
+                    ).first
+                    if not target.is_visible():
+                        family.click()
+                        target.wait_for(state="visible", timeout=10000)
+                    stage = "select_report"
+                    target.click()
+                    # Selecting the report should expose filter controls,
+                    # but do not click Run Report or export anything.
+                    stage = "verify_report_filter"
+                    page.get_by_text("Change Date Filter", exact=True).first.wait_for(
+                        state="visible", timeout=15000
+                    )
+                    print("PASS: Financial report selected. No report run or exported.", flush=True)
+                else:
+                    print("PASS: Report list visible. No report opened.", flush=True)
             else:
                 print("PASS: Authenticated UI confirmed; no reports accessed.", flush=True)
     except Exception:
