@@ -10,6 +10,8 @@ from src.optimantra_login import LOGIN_URL
 
 
 def validate_config(env):
+    if env.get("DATE_FIELD_MAPPING_PROBE_ENABLED") == "true" and env.get("DATE_FILTER_SMOKE_ENABLED") != "true":
+        raise RuntimeError("Date field mapping requires date-filter smoke")
     if env.get("DATE_INPUT_PROBE_ENABLED") == "true" and env.get("DATE_FILTER_SMOKE_ENABLED") != "true":
         raise RuntimeError("Date input probe requires date-filter smoke")
     if env.get("DATE_FILTER_SMOKE_ENABLED") == "true" and (env.get("NAVIGATION_SMOKE_ENABLED") != "true" or env.get("REPORT_SELECTION_SMOKE_ENABLED") != "true"):
@@ -143,7 +145,48 @@ def run():
                         wait_for_prompt_in_frames(page, "Starting Date for Period")
                         stage = "verify_end_date_prompt"
                         wait_for_prompt_in_frames(page, "Ending Date for Period")
-                        if os.environ.get("DATE_INPUT_PROBE_ENABLED") == "true":
+                        if os.environ.get("DATE_FIELD_MAPPING_PROBE_ENABLED") == "true":
+                            stage = "map_date_field_candidates"
+                            for label_name, phrase in (
+                                ("start", "Starting Date for Period"),
+                                ("end", "Ending Date for Period"),
+                            ):
+                                prompt_frames = 0
+                                candidates = 0
+                                visible = 0
+                                input_types = {"text": 0, "date": 0, "other": 0}
+                                for frame in page.frames:
+                                    try:
+                                        prompts = frame.get_by_text(phrase, exact=False)
+                                        if not prompts.count():
+                                            continue
+                                        prompt_frames += 1
+                                        for idx in range(min(prompts.count(), 3)):
+                                            candidate = prompts.nth(idx).locator(
+                                                "xpath=following::input[1]"
+                                            )
+                                            if candidate.count() != 1:
+                                                continue
+                                            candidates += 1
+                                            kind = (candidate.get_attribute("type") or "text").lower()
+                                            input_types[kind if kind in ("text", "date") else "other"] += 1
+                                            if candidate.is_visible():
+                                                visible += 1
+                                    except Exception:
+                                        continue
+                                print(
+                                    f"DATE_FIELD_MAPPING: label={label_name}; "
+                                    f"frames={prompt_frames}; "
+                                    f"candidate_inputs={candidates}; "
+                                    f"visible_candidates={visible}; "
+                                    f"text={input_types['text']}; "
+                                    f"date={input_types['date']}; "
+                                    f"other={input_types['other']}. "
+                                    "No values inspected or changed.",
+                                    flush=True,
+                                )
+                            print("PASS: Date field mapping probe complete. No report run.", flush=True)
+                        elif os.environ.get("DATE_INPUT_PROBE_ENABLED") == "true":
                             stage = "inspect_date_input_structure"
                             # Probe metadata only. Do not read input values,
                             # page text, HTML, identifiers or frame URLs.
