@@ -221,11 +221,20 @@ def open_export_dialog_smoke(page):
         "EXPORT_DIALOG_DIAGNOSTIC: phase=click_start",
         file=sys.stderr, flush=True,
     )
-    # Avoid expect_page hanging when the export command opens a different
-    # browsing context or replaces the active page. No download is allowed.
-    parent.click(timeout=8000, no_wait_after=True)
+    # The provided HTML installs its onclick handler directly on #tbExport,
+    # not on the enclosing anchor. Dispatch to that specific icon rather than
+    # asking Playwright to find a hit-testable point on a toolbar overlay.
+    # This only opens settings, never submits a download.
+    try:
+        controls[0].dispatch_event("click", timeout=5000)
+    except Exception:
+        print(
+            "EXPORT_DIALOG_DIAGNOSTIC: phase=icon_dispatch_failed",
+            file=sys.stderr, flush=True,
+        )
+        raise RuntimeError("Export icon click handler did not complete") from None
     print(
-        "EXPORT_DIALOG_DIAGNOSTIC: phase=click_returned",
+        "EXPORT_DIALOG_DIAGNOSTIC: phase=icon_dispatch_returned",
         file=sys.stderr, flush=True,
     )
     deadline = time.monotonic() + 35
