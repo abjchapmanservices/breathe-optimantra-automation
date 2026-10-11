@@ -1,7 +1,7 @@
-"""OptiMantra login-only smoke test for the approved Cloud Run runtime.
+"""OptiMantra login-only smoke test with non-sensitive stage diagnostics.
 
-No reports, downloads, screenshots, page content, or credentials are logged.
-Fails closed when selectors or confirmation are ambiguous.
+No reports, patient records, screenshots, HTML, URLs, credentials, or
+Playwright exception strings are logged. One login attempt only.
 """
 import os
 from urllib.parse import urlparse
@@ -18,45 +18,53 @@ def validate_config(env):
 def run():
     validate_config(os.environ)
     from playwright.sync_api import sync_playwright
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
-        try:
+    stage = "browser_start"
+    browser = None
+    try:
+        with sync_playwright() as playwright:
+            stage = "browser_launch"
+            browser = playwright.chromium.launch(headless=True)
             context = browser.new_context(accept_downloads=False, service_workers="block")
             page = context.new_page()
+            page.set_default_timeout(8000)
+            stage = "open_login"
             page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
             if urlparse(page.url).hostname != "www.optimantra.com":
-                raise RuntimeError("Unexpected login host")
-            # Visible labels come from the public login page; actual selectors
-            # must be tested in the authorized environment.
+                raise RuntimeError("Unexpected origin")
+            stage = "locate_login_fields"
             email = page.get_by_role("textbox", name="Email")
             password = page.get_by_label("Password", exact=True)
             if email.count() != 1 or password.count() != 1:
-                raise RuntimeError("Login fields were not uniquely identified")
+                raise RuntimeError("Fields not unique")
+            stage = "fill_credentials"
             email.fill(os.environ["OPTIMANTRA_USERNAME"])
             password.fill(os.environ["OPTIMANTRA_PASSWORD"])
-            # Never auto-accept an agreement with unspecified text.
+            stage = "locate_agreement"
             agreement = page.get_by_role("checkbox")
             if agreement.count() != 1:
-                raise RuntimeError("Agreement checkbox ambiguous")
+                raise RuntimeError("Agreement not unique")
+            stage = "confirm_agreement"
             agreement.check()
+            stage = "locate_submit"
             submit = page.get_by_role("button", name="Log in", exact=True)
             if submit.count() != 1:
-                raise RuntimeError("Submit button ambiguous")
-            submit.click()
-            page.wait_for_load_state("domcontentloaded", timeout=30000)
-            # Require a navigation away from the public login URL AND a
-            # post-login UI landmark. Do not print URL or page text.
+                raise RuntimeError("Submit not unique")
+            stage = "submit_login"
+            submit.click(timeout=8000)
+            stage = "verify_authentication"
+            page.get_by_text("Analytics", exact=True).first.wait_for(state="visible", timeout=15000)
             if "/public/login" in urlparse(page.url).path:
-                raise RuntimeError("Login remained on public login page")
-            landmark = page.get_by_text("Analytics", exact=True)
-            if landmark.count() < 1:
-                raise RuntimeError("Authenticated UI was not verified")
-            print("PASS: Authenticated session confirmed. No report accessed.")
-        except Exception:
-            # Avoid printing exception/page content which may disclose details.
-            raise RuntimeError("Login smoke test failed; inspect selectors securely") from None
-        finally:
-            browser.close()
+                raise RuntimeError("Login did not navigate")
+            print("PASS: Authentication UI confirmed; no reports accessed.", flush=True)
+    except Exception:
+        # Never print upstream error text, page content, credentials, or URL.
+        raise RuntimeError(f"Login smoke test failed at stage: {stage}") from None
+    finally:
+        if browser is not None:
+            try:
+                browser.close()
+            except Exception:
+                pass
 
 if __name__ == "__main__":
     run()
