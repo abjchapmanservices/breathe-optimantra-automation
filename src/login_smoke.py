@@ -52,13 +52,22 @@ def wait_for_prompt_in_frames(page, fragment, timeout_ms=20000):
 
 def fill_known_report_dates(page, iso_date):
     """Fill two inspected fields; emit no values, HTML or browser errors."""
+    import sys
+    print("DATE_FILL_DIAGNOSTIC: phase=entered", file=sys.stderr, flush=True)
     from src.report_parameters import reporting_date, report_dates
     formatted, _ = report_dates(reporting_date(iso_date))
+    print("DATE_FILL_DIAGNOSTIC: phase=date_validated", file=sys.stderr, flush=True)
     # OptiMantra may render the date controls only after choosing
     # "Your selection" for each of the two date prompts.
     import time
     def selector_matches(selector):
-        return sum(frame.locator(selector).count() for frame in page.frames)
+        matches = 0
+        for frame in page.frames:
+            try:
+                matches += frame.locator(selector).count()
+            except Exception:
+                continue
+        return matches
     initially = (
         selector_matches("#id_mstr40_txt"),
         selector_matches("#id_mstr47_txt"),
@@ -66,7 +75,7 @@ def fill_known_report_dates(page, iso_date):
     print(
         f"DATE_FILL_DIAGNOSTIC: phase=initial_fields; "
         f"start_matches={initially[0]}; end_matches={initially[1]}",
-        flush=True,
+        file=sys.stderr, flush=True,
     )
     if initially != (1, 1):
         selection_options = []
@@ -82,7 +91,7 @@ def fill_known_report_dates(page, iso_date):
         print(
             f"DATE_FILL_DIAGNOSTIC: phase=your_selection; "
             f"visible_options={len(selection_options)}",
-            flush=True,
+            file=sys.stderr, flush=True,
         )
         if len(selection_options) != 2:
             raise RuntimeError("Cannot uniquely locate two Your selection options")
@@ -90,7 +99,7 @@ def fill_known_report_dates(page, iso_date):
             candidate.click(timeout=8000)
             print(
                 f"DATE_FILL_DIAGNOSTIC: phase=selection_activated; option={i+1}",
-                flush=True,
+                file=sys.stderr, flush=True,
             )
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
@@ -104,7 +113,7 @@ def fill_known_report_dates(page, iso_date):
         print(
             f"DATE_FILL_DIAGNOSTIC: phase=after_activation; "
             f"start_matches={counts[0]}; end_matches={counts[1]}",
-            flush=True,
+            file=sys.stderr, flush=True,
         )
     matched = []
     for label, selector in (
@@ -122,7 +131,7 @@ def fill_known_report_dates(page, iso_date):
         print(
             f"DATE_FILL_DIAGNOSTIC: field={label}; phase=selector; "
             f"matches={len(candidates)}",
-            flush=True,
+            file=sys.stderr, flush=True,
         )
         if len(candidates) != 1:
             raise RuntimeError("Date input selector not unique")
@@ -133,22 +142,22 @@ def fill_known_report_dates(page, iso_date):
         print(
             f"DATE_FILL_DIAGNOSTIC: field={label}; phase=editable; "
             f"visible={str(visible).lower()}; enabled={str(enabled).lower()}",
-            flush=True,
+            file=sys.stderr, flush=True,
         )
         if not visible or not enabled:
             raise RuntimeError("Date field is not editable")
     for label, control in matched:
-        print(f"DATE_FILL_DIAGNOSTIC: field={label}; phase=fill_attempt", flush=True)
+        print(f"DATE_FILL_DIAGNOSTIC: field={label}; phase=fill_attempt", file=sys.stderr, flush=True)
         control.fill(formatted, timeout=8000)
-        print(f"DATE_FILL_DIAGNOSTIC: field={label}; phase=filled", flush=True)
+        print(f"DATE_FILL_DIAGNOSTIC: field={label}; phase=filled", file=sys.stderr, flush=True)
         control.press("Tab")
-        print(f"DATE_FILL_DIAGNOSTIC: field={label}; phase=blurred", flush=True)
+        print(f"DATE_FILL_DIAGNOSTIC: field={label}; phase=blurred", file=sys.stderr, flush=True)
     for label, control in matched:
         correct = control.input_value().strip() == formatted
         print(
             f"DATE_FILL_DIAGNOSTIC: field={label}; phase=verify; "
             f"matches_expected={str(correct).lower()}",
-            flush=True,
+            file=sys.stderr, flush=True,
         )
         if not correct:
             raise RuntimeError("Date input verification failed")
