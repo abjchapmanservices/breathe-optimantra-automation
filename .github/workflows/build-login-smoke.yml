@@ -1,0 +1,37 @@
+name: Build Login Smoke Container (No Execution)
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: gcp-synthetic
+    timeout-minutes: 25
+    env:
+      PROJECT_ID: divine-glazing-511316-a1
+      REGION: us-central1
+      ARTIFACT_REPOSITORY: ${{ vars.GCP_ARTIFACT_REPOSITORY }}
+      DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOY_SERVICE_ACCOUNT }}
+          project_id: ${{ env.PROJECT_ID }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Build login smoke image
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPOSITORY}/breathe-login-smoke:${GITHUB_SHA}"
+          docker build -f Dockerfile.login -t "$IMAGE" .
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          docker push "$IMAGE"
+          echo "Image published. NOT deployed or executed."
+          echo "Image tag commit: ${GITHUB_SHA}"
