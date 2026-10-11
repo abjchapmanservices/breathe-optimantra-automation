@@ -54,6 +54,58 @@ def fill_known_report_dates(page, iso_date):
     """Fill two inspected fields; emit no values, HTML or browser errors."""
     from src.report_parameters import reporting_date, report_dates
     formatted, _ = report_dates(reporting_date(iso_date))
+    # OptiMantra may render the date controls only after choosing
+    # "Your selection" for each of the two date prompts.
+    import time
+    def selector_matches(selector):
+        return sum(frame.locator(selector).count() for frame in page.frames)
+    initially = (
+        selector_matches("#id_mstr40_txt"),
+        selector_matches("#id_mstr47_txt"),
+    )
+    print(
+        f"DATE_FILL_DIAGNOSTIC: phase=initial_fields; "
+        f"start_matches={initially[0]}; end_matches={initially[1]}",
+        flush=True,
+    )
+    if initially != (1, 1):
+        selection_options = []
+        for frame in page.frames:
+            try:
+                loc = frame.get_by_text("Your selection", exact=True)
+                for i in range(min(loc.count(), 10)):
+                    candidate = loc.nth(i)
+                    if candidate.is_visible():
+                        selection_options.append(candidate)
+            except Exception:
+                continue
+        print(
+            f"DATE_FILL_DIAGNOSTIC: phase=your_selection; "
+            f"visible_options={len(selection_options)}",
+            flush=True,
+        )
+        if len(selection_options) != 2:
+            raise RuntimeError("Cannot uniquely locate two Your selection options")
+        for i, candidate in enumerate(selection_options):
+            candidate.click(timeout=8000)
+            print(
+                f"DATE_FILL_DIAGNOSTIC: phase=selection_activated; option={i+1}",
+                flush=True,
+            )
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            counts = (
+                selector_matches("#id_mstr40_txt"),
+                selector_matches("#id_mstr47_txt"),
+            )
+            if counts == (1, 1):
+                break
+            page.wait_for_timeout(350)
+        print(
+            f"DATE_FILL_DIAGNOSTIC: phase=after_activation; "
+            f"start_matches={counts[0]}; end_matches={counts[1]}",
+            flush=True,
+        )
     matched = []
     for label, selector in (
         ("start", "#id_mstr40_txt"),
