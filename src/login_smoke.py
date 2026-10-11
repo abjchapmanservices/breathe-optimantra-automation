@@ -78,43 +78,49 @@ def fill_known_report_dates(page, iso_date):
         file=sys.stderr, flush=True,
     )
     if initially != (1, 1):
-        selection_options = []
-        for frame in page.frames:
-            try:
-                loc = frame.get_by_text("Your selection", exact=True)
-                for i in range(min(loc.count(), 10)):
-                    candidate = loc.nth(i)
-                    if candidate.is_visible():
-                        selection_options.append(candidate)
-            except Exception:
-                continue
-        print(
-            f"DATE_FILL_DIAGNOSTIC: phase=your_selection; "
-            f"visible_options={len(selection_options)}",
-            file=sys.stderr, flush=True,
-        )
-        if len(selection_options) != 2:
-            raise RuntimeError("Cannot uniquely locate two Your selection options")
-        for i, candidate in enumerate(selection_options):
-            candidate.click(timeout=8000)
+        # Read only: inspect known date prompt structure, never input values,
+        # patient information, DOM HTML, URLs or arbitrary nearby text.
+        for label, phrase in (
+            ("start", "Starting Date for Period"),
+            ("end", "Ending Date for Period"),
+        ):
+            labels_found = 0
+            for frame in page.frames:
+                try:
+                    headings = frame.locator(".mstrPromptQuestionMeaning").filter(
+                        has_text=phrase
+                    )
+                    for idx in range(min(headings.count(), 3)):
+                        heading = headings.nth(idx)
+                        if not heading.is_visible():
+                            continue
+                        labels_found += 1
+                        for depth in (3, 5, 7, 9):
+                            ancestor = heading.locator(
+                                "xpath=" + "/".join([".."] * depth)
+                            )
+                            if ancestor.count() != 1:
+                                continue
+                            inputs = ancestor.locator("input")
+                            types = {}
+                            for n in range(min(inputs.count(), 30)):
+                                field = inputs.nth(n)
+                                kind = (field.get_attribute("type") or "text").lower()
+                                key = kind if kind in ("text", "radio", "checkbox", "date") else "other"
+                                types[key] = types.get(key, 0) + 1
+                            print(
+                                f"DATE_PROMPT_STRUCTURE: field={label}; "
+                                f"ancestor_depth={depth}; input_count={inputs.count()}; "
+                                f"types={','.join(f'{key}:{value}' for key,value in sorted(types.items())) or 'none'}",
+                                file=sys.stderr, flush=True,
+                            )
+                except Exception:
+                    continue
             print(
-                f"DATE_FILL_DIAGNOSTIC: phase=selection_activated; option={i+1}",
+                f"DATE_PROMPT_STRUCTURE: field={label}; visible_labels={labels_found}",
                 file=sys.stderr, flush=True,
             )
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            counts = (
-                selector_matches("#id_mstr40_txt"),
-                selector_matches("#id_mstr47_txt"),
-            )
-            if counts == (1, 1):
-                break
-            page.wait_for_timeout(350)
-        print(
-            f"DATE_FILL_DIAGNOSTIC: phase=after_activation; "
-            f"start_matches={counts[0]}; end_matches={counts[1]}",
-            file=sys.stderr, flush=True,
-        )
+        raise RuntimeError("Date field selectors require prompt-scoped inspection")
     matched = []
     for label, selector in (
         ("start", "#id_mstr40_txt"),
