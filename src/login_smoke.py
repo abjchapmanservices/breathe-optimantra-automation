@@ -10,6 +10,11 @@ from src.optimantra_login import LOGIN_URL
 
 
 def validate_config(env):
+    if env.get("DATE_FILL_SMOKE_ENABLED") == "true":
+        if env.get("DATE_FILTER_SMOKE_ENABLED") != "true" or env.get("NAVIGATION_SMOKE_ENABLED") != "true" or env.get("REPORT_SELECTION_SMOKE_ENABLED") != "true":
+            raise RuntimeError("Date fill requires date filter and report selection")
+        from src.report_parameters import reporting_date
+        reporting_date(env.get("REPORT_DATE"))
     if env.get("DATE_FIELD_MAPPING_PROBE_ENABLED") == "true" and env.get("DATE_FILTER_SMOKE_ENABLED") != "true":
         raise RuntimeError("Date field mapping requires date-filter smoke")
     if env.get("DATE_INPUT_PROBE_ENABLED") == "true" and env.get("DATE_FILTER_SMOKE_ENABLED") != "true":
@@ -43,6 +48,33 @@ def wait_for_prompt_in_frames(page, fragment, timeout_ms=20000):
                 continue
         page.wait_for_timeout(300)
     raise RuntimeError("Report prompt not visible")
+
+
+def fill_known_report_dates(page, iso_date):
+    """Fill only the two exact inspected selectors, never submit the report."""
+    from src.report_parameters import reporting_date, report_dates
+    formatted, _ = report_dates(reporting_date(iso_date))
+    selectors = ("#id_mstr40_txt", "#id_mstr47_txt")
+    matched = []
+    for selector in selectors:
+        candidates = []
+        for frame in page.frames:
+            control = frame.locator(selector)
+            if control.count() == 1:
+                candidates.append(control)
+        if len(candidates) != 1:
+            raise RuntimeError("Date selector did not match exactly one element")
+        matched.append(candidates[0])
+    for control in matched:
+        if not control.is_visible() or not control.is_enabled():
+            raise RuntimeError("Date input not editable; verify Your selection is selected")
+    for control in matched:
+        control.fill(formatted, timeout=8000)
+        control.press("Tab")
+    for control in matched:
+        if control.input_value().strip() != formatted:
+            raise RuntimeError("Date value did not match expected format")
+    return True
 
 
 def run():
@@ -145,7 +177,11 @@ def run():
                         wait_for_prompt_in_frames(page, "Starting Date for Period")
                         stage = "verify_end_date_prompt"
                         wait_for_prompt_in_frames(page, "Ending Date for Period")
-                        if os.environ.get("DATE_FIELD_MAPPING_PROBE_ENABLED") == "true":
+                        if os.environ.get("DATE_FILL_SMOKE_ENABLED") == "true":
+                            stage = "fill_date_fields"
+                            fill_known_report_dates(page, os.environ["REPORT_DATE"])
+                            print("PASS: Both reporting dates entered and verified. Report not run.", flush=True)
+                        elif os.environ.get("DATE_FIELD_MAPPING_PROBE_ENABLED") == "true":
                             stage = "map_date_field_candidates"
                             # Structural metadata only. No values, IDs, names,
                             # page HTML, URLs, or patient information collected.
