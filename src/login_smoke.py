@@ -75,7 +75,20 @@ def run():
             )
             if "/public/login" in urlparse(page.url).path:
                 raise RuntimeError("Still on login page")
-            print("PASS: Authenticated UI confirmed; no reports accessed.", flush=True)
+            if os.environ.get("NAVIGATION_SMOKE_ENABLED") == "true":
+                stage = "open_analytics"
+                page.get_by_text("Analytics", exact=True).first.click()
+                stage = "open_report_list"
+                report_list = page.get_by_text("List of Reports", exact=True).first
+                report_list.wait_for(state="visible", timeout=15000)
+                report_list.click()
+                stage = "locate_financial_report_category"
+                page.get_by_text("Financials by Category", exact=True).first.wait_for(
+                    state="visible", timeout=15000
+                )
+                print("PASS: Report list visible. No report opened.", flush=True)
+            else:
+                print("PASS: Authenticated UI confirmed; no reports accessed.", flush=True)
     except Exception:
         raise RuntimeError(f"Login smoke test failed at stage: {stage}") from None
     finally:
