@@ -13,7 +13,7 @@ def validate_config(env):
     if env.get("LOGIN_SMOKE_ENABLED") != "true":
         raise RuntimeError("Login test is not enabled")
     if env.get("OPTIMANTRA_TERMS_APPROVED") != "true":
-        raise RuntimeError("Login agreement approval required")
+        raise RuntimeError("Login terms approval required")
     if not env.get("OPTIMANTRA_USERNAME") or not env.get("OPTIMANTRA_PASSWORD"):
         raise RuntimeError("Credentials are not available")
 
