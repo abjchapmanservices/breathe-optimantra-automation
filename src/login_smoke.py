@@ -10,6 +10,8 @@ from src.optimantra_login import LOGIN_URL
 
 
 def validate_config(env):
+    if env.get("EXPORT_DIALOG_SMOKE_ENABLED") == "true" and env.get("REPORT_RUN_SMOKE_ENABLED") != "true":
+        raise RuntimeError("Export dialog smoke requires report run smoke")
     if env.get("REPORT_RUN_SMOKE_ENABLED") == "true" and env.get("DATE_FILL_SMOKE_ENABLED") != "true":
         raise RuntimeError("Report run smoke requires verified date fill")
     if env.get("DATE_FILL_SMOKE_ENABLED") == "true":
@@ -174,6 +176,65 @@ def run_report_smoke(page):
     return True
 
 
+def open_export_dialog_smoke(page):
+    """Open export settings only, without clicking final Export or downloading."""
+    import sys
+    import time
+    deadline = time.monotonic() + 120
+    controls = []
+    while time.monotonic() < deadline:
+        controls = []
+        for tab in page.context.pages:
+            for frame in tab.frames:
+                try:
+                    export_icon = frame.locator("#tbExport")
+                    if export_icon.count() == 1 and export_icon.is_visible():
+                        controls.append(export_icon)
+                except Exception:
+                    continue
+        if len(controls) == 1:
+            break
+        if len(controls) > 1:
+            break
+        page.wait_for_timeout(1000)
+    print(
+        f"EXPORT_DIALOG_DIAGNOSTIC: phase=toolbar; matches={len(controls)}",
+        file=sys.stderr, flush=True,
+    )
+    if len(controls) != 1:
+        raise RuntimeError("Export toolbar control not unique or not ready")
+    controls[0].click(timeout=10000)
+    # Only inspect UI labels, never report rows, values, or document source.
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        dialog_frames = []
+        for tab in page.context.pages:
+            for frame in tab.frames:
+                try:
+                    whole = frame.get_by_text("Whole report", exact=True)
+                    csv_format = frame.get_by_text("CSV file format", exact=True)
+                    if whole.count() and csv_format.count():
+                        dialog_frames.append(frame)
+                except Exception:
+                    continue
+        if len(dialog_frames) == 1:
+            break
+        if len(dialog_frames) > 1:
+            break
+        page.wait_for_timeout(400)
+    print(
+        f"EXPORT_DIALOG_DIAGNOSTIC: phase=dialog; matching_frames={len(dialog_frames)}",
+        file=sys.stderr, flush=True,
+    )
+    if len(dialog_frames) != 1:
+        raise RuntimeError("Export dialog default choices not uniquely found")
+    print(
+        "PASS: Export dialog opened; expected Whole report and CSV options visible. "
+        "No final export or download attempted.",
+        flush=True,
+    )
+
+
 def run():
     validate_config(os.environ)
     from playwright.sync_api import sync_playwright
@@ -280,7 +341,11 @@ def run():
                             if os.environ.get("REPORT_RUN_SMOKE_ENABLED") == "true":
                                 stage = "submit_report"
                                 run_report_smoke(page)
-                                print("PASS: Report submitted. No export or download attempted.", flush=True)
+                                if os.environ.get("EXPORT_DIALOG_SMOKE_ENABLED") == "true":
+                                    stage = "open_export_dialog"
+                                    open_export_dialog_smoke(page)
+                                else:
+                                    print("PASS: Report submitted. No export or download attempted.", flush=True)
                             else:
                                 print("PASS: Both reporting dates entered and verified. Report not run.", flush=True)
                         elif os.environ.get("DATE_FIELD_MAPPING_PROBE_ENABLED") == "true":
