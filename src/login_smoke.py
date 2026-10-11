@@ -216,24 +216,35 @@ def open_export_dialog_smoke(page):
     )
     if not is_anchor:
         raise RuntimeError("Export toolbar anchor not found")
-    parent.click(timeout=10000)
+    previous_pages = set(page.context.pages)
     print(
-        "EXPORT_DIALOG_DIAGNOSTIC: phase=click_complete",
+        "EXPORT_DIALOG_DIAGNOSTIC: phase=await_new_tab",
         file=sys.stderr, flush=True,
     )
-    # Only inspect UI labels, never report rows, values, or document source.
-    deadline = time.monotonic() + 20
+    # The export window is a popup; do not wait for navigation to complete
+    # on the report page. Capture only the new Page object.
+    with page.context.expect_page(timeout=20000) as opened:
+        parent.click(timeout=10000, no_wait_after=True)
+    export_page = opened.value
+    print(
+        "EXPORT_DIALOG_DIAGNOSTIC: phase=new_tab_opened; "
+        f"is_new_tab={str(export_page not in previous_pages).lower()}",
+        file=sys.stderr, flush=True,
+    )
+    if export_page in previous_pages:
+        raise RuntimeError("Export window was not a new tab")
+    # Only inspect export UI labels, never report rows, values, or source.
+    deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         dialog_frames = []
-        for tab in page.context.pages:
-            for frame in tab.frames:
-                try:
-                    whole = frame.get_by_text("Whole report", exact=True)
-                    csv_format = frame.get_by_text("CSV file format", exact=True)
-                    if whole.count() and csv_format.count():
-                        dialog_frames.append(frame)
-                except Exception:
-                    continue
+        for frame in export_page.frames:
+            try:
+                whole = frame.get_by_text("Whole report", exact=True)
+                csv_format = frame.get_by_text("CSV file format", exact=True)
+                if whole.count() and csv_format.count():
+                    dialog_frames.append(frame)
+            except Exception:
+                continue
         if len(dialog_frames) == 1:
             break
         if len(dialog_frames) > 1:
