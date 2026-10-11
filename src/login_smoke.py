@@ -5,7 +5,6 @@ Fails closed when selectors or confirmation are ambiguous.
 """
 import os
 from urllib.parse import urlparse
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 from src.optimantra_login import LOGIN_URL
 
 def validate_config(env):
@@ -18,6 +17,7 @@ def validate_config(env):
 
 def run():
     validate_config(os.environ)
+    from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
         try:
@@ -52,7 +52,7 @@ def run():
             if landmark.count() < 1:
                 raise RuntimeError("Authenticated UI was not verified")
             print("PASS: Authenticated session confirmed. No report accessed.")
-        except (PlaywrightTimeout, Exception) as exc:
+        except Exception:
             # Avoid printing exception/page content which may disclose details.
             raise RuntimeError("Login smoke test failed; inspect selectors securely") from None
         finally:
