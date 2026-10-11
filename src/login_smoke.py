@@ -51,96 +51,42 @@ def wait_for_prompt_in_frames(page, fragment, timeout_ms=20000):
 
 
 def fill_known_report_dates(page, iso_date):
-    """Fill two inspected fields; emit no values, HTML or browser errors."""
+    """Locate each date input by its prompt container, without dynamic IDs."""
     import sys
-    print("DATE_FILL_DIAGNOSTIC: phase=entered", file=sys.stderr, flush=True)
     from src.report_parameters import reporting_date, report_dates
+
+    print("DATE_FILL_DIAGNOSTIC: phase=entered", file=sys.stderr, flush=True)
     formatted, _ = report_dates(reporting_date(iso_date))
     print("DATE_FILL_DIAGNOSTIC: phase=date_validated", file=sys.stderr, flush=True)
-    # OptiMantra may render the date controls only after choosing
-    # "Your selection" for each of the two date prompts.
-    import time
-    def selector_matches(selector):
-        matches = 0
-        for frame in page.frames:
-            try:
-                matches += frame.locator(selector).count()
-            except Exception:
-                continue
-        return matches
-    initially = (
-        selector_matches("#id_mstr40_txt"),
-        selector_matches("#id_mstr47_txt"),
-    )
-    print(
-        f"DATE_FILL_DIAGNOSTIC: phase=initial_fields; "
-        f"start_matches={initially[0]}; end_matches={initially[1]}",
-        file=sys.stderr, flush=True,
-    )
-    if initially != (1, 1):
-        # Read only: inspect known date prompt structure, never input values,
-        # patient information, DOM HTML, URLs or arbitrary nearby text.
-        for label, phrase in (
-            ("start", "Starting Date for Period"),
-            ("end", "Ending Date for Period"),
-        ):
-            labels_found = 0
-            for frame in page.frames:
-                try:
-                    headings = frame.locator(".mstrPromptQuestionMeaning").filter(
-                        has_text=phrase
-                    )
-                    for idx in range(min(headings.count(), 3)):
-                        heading = headings.nth(idx)
-                        if not heading.is_visible():
-                            continue
-                        labels_found += 1
-                        for depth in (3, 5, 7, 9):
-                            ancestor = heading.locator(
-                                "xpath=" + "/".join([".."] * depth)
-                            )
-                            if ancestor.count() != 1:
-                                continue
-                            inputs = ancestor.locator("input")
-                            types = {}
-                            for n in range(min(inputs.count(), 30)):
-                                field = inputs.nth(n)
-                                kind = (field.get_attribute("type") or "text").lower()
-                                key = kind if kind in ("text", "radio", "checkbox", "date") else "other"
-                                types[key] = types.get(key, 0) + 1
-                            print(
-                                f"DATE_PROMPT_STRUCTURE: field={label}; "
-                                f"ancestor_depth={depth}; input_count={inputs.count()}; "
-                                f"types={','.join(f'{key}:{value}' for key,value in sorted(types.items())) or 'none'}",
-                                file=sys.stderr, flush=True,
-                            )
-                except Exception:
-                    continue
-            print(
-                f"DATE_PROMPT_STRUCTURE: field={label}; visible_labels={labels_found}",
-                file=sys.stderr, flush=True,
-            )
-        raise RuntimeError("Date field selectors require prompt-scoped inspection")
     matched = []
-    for label, selector in (
-        ("start", "#id_mstr40_txt"),
-        ("end", "#id_mstr47_txt"),
+    for label, phrase in (
+        ("start", "Starting Date for Period"),
+        ("end", "Ending Date for Period"),
     ):
         candidates = []
         for frame in page.frames:
             try:
-                control = frame.locator(selector)
-                if control.count() == 1:
-                    candidates.append(control)
+                headings = frame.locator(".mstrPromptQuestionMeaning").filter(
+                    has_text=phrase
+                )
+                for index in range(min(headings.count(), 4)):
+                    heading = headings.nth(index)
+                    if not heading.is_visible():
+                        continue
+                    section = heading.locator("xpath=../../../../..")
+                    text_inputs = section.locator('input[type="text"]')
+                    radios = section.locator('input[type="radio"]')
+                    if text_inputs.count() == 1 and radios.count() == 2:
+                        candidates.append(text_inputs.first)
             except Exception:
                 continue
         print(
-            f"DATE_FILL_DIAGNOSTIC: field={label}; phase=selector; "
+            f"DATE_FILL_DIAGNOSTIC: field={label}; phase=prompt_scoped_selector; "
             f"matches={len(candidates)}",
             file=sys.stderr, flush=True,
         )
         if len(candidates) != 1:
-            raise RuntimeError("Date input selector not unique")
+            raise RuntimeError("Date prompt does not map to one input")
         matched.append((label, candidates[0]))
     for label, control in matched:
         visible = control.is_visible()
@@ -151,13 +97,18 @@ def fill_known_report_dates(page, iso_date):
             file=sys.stderr, flush=True,
         )
         if not visible or not enabled:
-            raise RuntimeError("Date field is not editable")
+            raise RuntimeError("Date input is not editable; selection mode must be inspected")
     for label, control in matched:
-        print(f"DATE_FILL_DIAGNOSTIC: field={label}; phase=fill_attempt", file=sys.stderr, flush=True)
+        print(
+            f"DATE_FILL_DIAGNOSTIC: field={label}; phase=fill_attempt",
+            file=sys.stderr, flush=True,
+        )
         control.fill(formatted, timeout=8000)
-        print(f"DATE_FILL_DIAGNOSTIC: field={label}; phase=filled", file=sys.stderr, flush=True)
-        control.press("Tab")
-        print(f"DATE_FILL_DIAGNOSTIC: field={label}; phase=blurred", file=sys.stderr, flush=True)
+        control.press("Tab", timeout=8000)
+        print(
+            f"DATE_FILL_DIAGNOSTIC: field={label}; phase=filled",
+            file=sys.stderr, flush=True,
+        )
     for label, control in matched:
         correct = control.input_value().strip() == formatted
         print(
