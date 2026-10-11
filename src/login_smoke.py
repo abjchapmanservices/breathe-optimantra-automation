@@ -10,6 +10,8 @@ from src.optimantra_login import LOGIN_URL
 
 
 def validate_config(env):
+    if env.get("DATE_FILTER_SMOKE_ENABLED") == "true" and (env.get("NAVIGATION_SMOKE_ENABLED") != "true" or env.get("REPORT_SELECTION_SMOKE_ENABLED") != "true"):
+        raise RuntimeError("Date filter smoke requires report selection and navigation")
     if env.get("REPORT_SELECTION_SMOKE_ENABLED") == "true" and env.get("NAVIGATION_SMOKE_ENABLED") != "true":
         raise RuntimeError("Report selection requires navigation")
     if env.get("LOGIN_SMOKE_ENABLED") != "true":
@@ -113,7 +115,20 @@ def run():
                     page.get_by_text("Change Date Filter", exact=True).first.wait_for(
                         state="visible", timeout=15000
                     )
-                    print("PASS: Financial report selected. No report run or exported.", flush=True)
+                    if os.environ.get("DATE_FILTER_SMOKE_ENABLED") == "true":
+                        stage = "open_date_filter"
+                        page.get_by_text("Change Date Filter", exact=True).first.click()
+                        stage = "verify_start_date_prompt"
+                        page.get_by_text(
+                            "Starting Date for Period", exact=False
+                        ).first.wait_for(state="visible", timeout=15000)
+                        stage = "verify_end_date_prompt"
+                        page.get_by_text(
+                            "Ending Date for Period", exact=False
+                        ).first.wait_for(state="visible", timeout=15000)
+                        print("PASS: Date filter prompts visible. No report run or exported.", flush=True)
+                    else:
+                        print("PASS: Financial report selected. No report run or exported.", flush=True)
                 else:
                     print("PASS: Report list visible. No report opened.", flush=True)
             else:
