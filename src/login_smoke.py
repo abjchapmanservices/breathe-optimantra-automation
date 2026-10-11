@@ -206,13 +206,16 @@ def open_export_dialog_smoke(page):
     # The inspected HTML places the Export span inside a clickable
     # mstrToolbarButton anchor. Click the anchor rather than its child span.
     parent = controls[0].locator("xpath=..")
+    is_anchor = parent.count() == 1 and parent.evaluate(
+        "(e) => e.tagName.toLowerCase() === 'a'"
+    )
     print(
         "EXPORT_DIALOG_DIAGNOSTIC: phase=click_attempt; "
-        f"parent_anchor={str(parent.count() == 1 and parent.evaluate('(e) => e.tagName.toLowerCase() === \'a\'')).lower()}",
+        f"parent_anchor={str(is_anchor).lower()}",
         file=sys.stderr, flush=True,
     )
-    if parent.count() != 1:
-        raise RuntimeError("Export toolbar parent not unique")
+    if not is_anchor:
+        raise RuntimeError("Export toolbar anchor not found")
     parent.click(timeout=10000)
     print(
         "EXPORT_DIALOG_DIAGNOSTIC: phase=click_complete",
