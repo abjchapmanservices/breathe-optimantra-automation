@@ -147,44 +147,38 @@ def run():
                         wait_for_prompt_in_frames(page, "Ending Date for Period")
                         if os.environ.get("DATE_FIELD_MAPPING_PROBE_ENABLED") == "true":
                             stage = "map_date_field_candidates"
-                            for label_name, phrase in (
-                                ("start", "Starting Date for Period"),
-                                ("end", "Ending Date for Period"),
-                            ):
-                                prompt_frames = 0
-                                candidates = 0
-                                visible = 0
-                                input_types = {"text": 0, "date": 0, "other": 0}
-                                for frame in page.frames:
-                                    try:
-                                        prompts = frame.get_by_text(phrase, exact=False)
-                                        if not prompts.count():
-                                            continue
-                                        prompt_frames += 1
-                                        for idx in range(min(prompts.count(), 3)):
-                                            candidate = prompts.nth(idx).locator(
-                                                "xpath=following::input[1]"
-                                            )
-                                            if candidate.count() != 1:
-                                                continue
-                                            candidates += 1
-                                            kind = (candidate.get_attribute("type") or "text").lower()
-                                            input_types[kind if kind in ("text", "date") else "other"] += 1
-                                            if candidate.is_visible():
-                                                visible += 1
-                                    except Exception:
+                            # Structural metadata only. No values, IDs, names,
+                            # page HTML, URLs, or patient information collected.
+                            for frame_index, frame in enumerate(page.frames):
+                                try:
+                                    start_count = frame.get_by_text(
+                                        "Starting Date for Period", exact=False
+                                    ).count()
+                                    end_count = frame.get_by_text(
+                                        "Ending Date for Period", exact=False
+                                    ).count()
+                                    if not (start_count or end_count):
                                         continue
-                                print(
-                                    f"DATE_FIELD_MAPPING: label={label_name}; "
-                                    f"frames={prompt_frames}; "
-                                    f"candidate_inputs={candidates}; "
-                                    f"visible_candidates={visible}; "
-                                    f"text={input_types['text']}; "
-                                    f"date={input_types['date']}; "
-                                    f"other={input_types['other']}. "
-                                    "No values inspected or changed.",
-                                    flush=True,
-                                )
+                                    type_counts = {}
+                                    inputs = frame.locator("input")
+                                    for i in range(min(inputs.count(), 50)):
+                                        field = inputs.nth(i)
+                                        kind = (field.get_attribute("type") or "text").lower()
+                                        visible = "visible" if field.is_visible() else "hidden"
+                                        key = kind + "_" + visible
+                                        type_counts[key] = type_counts.get(key, 0) + 1
+                                    summary = ",".join(
+                                        f"{kind}:{count}" for kind, count in sorted(type_counts.items())
+                                    ) or "none"
+                                    print(
+                                        f"DATE_FRAME_STRUCTURE: frame_index={frame_index}; "
+                                        f"start_label_matches={start_count}; "
+                                        f"end_label_matches={end_count}; "
+                                        f"input_types={summary}. Values not inspected.",
+                                        flush=True,
+                                    )
+                                except Exception:
+                                    continue
                             print("PASS: Date field mapping probe complete. No report run.", flush=True)
                         elif os.environ.get("DATE_INPUT_PROBE_ENABLED") == "true":
                             stage = "inspect_date_input_structure"
