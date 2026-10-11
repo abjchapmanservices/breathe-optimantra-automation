@@ -1,0 +1,21 @@
+name: Cloud Run Container Build Test
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - "src/**"
+      - "tests/**"
+      - ".github/workflows/cloud-run-build-test.yml"
+permissions:
+  contents: read
+jobs:
+  container-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build synthetic-only image
+        run: docker build -t breathe-reporting:synthetic .
+      - name: Execute synthetic-only container
+        run: docker run --rm -e LIVE_MODE=false -e REPORT_MODE=synthetic breathe-reporting:synthetic
