@@ -1,0 +1,74 @@
+name: Deploy synthetic Cloud Run Job to GCP
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: breathe-synthetic-gcp-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy non-PHI Cloud Run Job
+    runs-on: ubuntu-latest
+    environment: gcp-synthetic
+    timeout-minutes: 25
+    env:
+      PROJECT_ID: divine-glazing-511316-a1
+      REGION: us-central1
+      JOB_NAME: breathe-optimantra-reporting
+      ARTIFACT_REPOSITORY: ${{ vars.GCP_ARTIFACT_REPOSITORY }}
+      RUNTIME_SERVICE_ACCOUNT: ${{ vars.GCP_RUNTIME_SERVICE_ACCOUNT }}
+      DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
+    steps:
+      - name: Confirm required configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for var in ARTIFACT_REPOSITORY RUNTIME_SERVICE_ACCOUNT DEPLOY_SERVICE_ACCOUNT WIF_PROVIDER; do
+            if [ -z "${!var}" ]; then
+              echo "::error::Missing GitHub environment variable for ${var}"
+              exit 1
+            fi
+          done
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOY_SERVICE_ACCOUNT }}
+          project_id: ${{ env.PROJECT_ID }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Confirm GCP project
+        run: gcloud config set project "$PROJECT_ID"
+      - name: Prepare Artifact Registry authentication
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+      - name: Build synthetic-only container
+        run: |
+          set -euo pipefail
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPOSITORY}/breathe-reporting:${GITHUB_SHA}"
+          echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+          docker build --tag "$IMAGE" .
+          docker run --rm --env LIVE_MODE=false --env REPORT_MODE=synthetic "$IMAGE"
+      - name: Publish synthetic container
+        run: docker push "$IMAGE"
+      - name: Deploy Cloud Run Job disabled for live data
+        run: |
+          gcloud run jobs deploy "$JOB_NAME" \
+            --project "$PROJECT_ID" \
+            --region "$REGION" \
+            --image "$IMAGE" \
+            --service-account "$RUNTIME_SERVICE_ACCOUNT" \
+            --set-env-vars LIVE_MODE=false,REPORT_MODE=synthetic \
+            --task-timeout 600s \
+            --max-retries 0
+      - name: Execute synthetic validation
+        run: |
+          gcloud run jobs execute "$JOB_NAME" \
+            --project "$PROJECT_ID" \
+            --region "$REGION" \
+            --wait
