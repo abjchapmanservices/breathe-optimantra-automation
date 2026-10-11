@@ -58,31 +58,57 @@ def fill_known_report_dates(page, iso_date):
     print("DATE_FILL_DIAGNOSTIC: phase=entered", file=sys.stderr, flush=True)
     formatted, _ = report_dates(reporting_date(iso_date))
     print("DATE_FILL_DIAGNOSTIC: phase=date_validated", file=sys.stderr, flush=True)
+    import time
     matched = []
     for label, phrase in (
         ("start", "Starting Date for Period"),
         ("end", "Ending Date for Period"),
     ):
+        deadline = time.monotonic() + 12
         candidates = []
-        for frame in page.frames:
-            try:
-                headings = frame.locator(".mstrPromptQuestionMeaning").filter(
-                    has_text=phrase
-                )
-                for index in range(min(headings.count(), 4)):
-                    heading = headings.nth(index)
-                    if not heading.is_visible():
-                        continue
-                    section = heading.locator("xpath=../../../../..")
-                    text_inputs = section.locator('input[type="text"]')
-                    radios = section.locator('input[type="radio"]')
-                    if text_inputs.count() == 1 and radios.count() == 2:
-                        candidates.append(text_inputs.first)
-            except Exception:
-                continue
+        last_counts = (0, 0, 0, 0, 0)
+        while time.monotonic() < deadline:
+            candidates = []
+            headings_total = headings_visible = sections_found = texts_found = radios_found = 0
+            for frame in page.frames:
+                try:
+                    headings = frame.locator(".mstrPromptQuestionMeaning").filter(
+                        has_text=phrase
+                    )
+                    headings_total += headings.count()
+                    for index in range(min(headings.count(), 4)):
+                        heading = headings.nth(index)
+                        if not heading.is_visible():
+                            continue
+                        headings_visible += 1
+                        section = heading.locator("xpath=../../../../..")
+                        if section.count() != 1:
+                            continue
+                        sections_found += 1
+                        # The prior structure test observed one text input
+                        # and two radio inputs within this five-level parent.
+                        text_inputs = section.locator('input[type="text"]')
+                        radios = section.locator('input[type="radio"]')
+                        texts_found += text_inputs.count()
+                        radios_found += radios.count()
+                        if text_inputs.count() == 1 and radios.count() == 2:
+                            candidates.append(text_inputs.first)
+                except Exception:
+                    continue
+            last_counts = (
+                headings_total, headings_visible, sections_found,
+                texts_found, radios_found
+            )
+            if len(candidates) == 1:
+                break
+            if len(candidates) > 1:
+                break
+            page.wait_for_timeout(400)
         print(
             f"DATE_FILL_DIAGNOSTIC: field={label}; phase=prompt_scoped_selector; "
-            f"matches={len(candidates)}",
+            f"matches={len(candidates)}; headings={last_counts[0]}; "
+            f"visible_headings={last_counts[1]}; sections={last_counts[2]}; "
+            f"text_inputs={last_counts[3]}; radio_inputs={last_counts[4]}",
             file=sys.stderr, flush=True,
         )
         if len(candidates) != 1:
