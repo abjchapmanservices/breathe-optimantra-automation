@@ -10,6 +10,8 @@ from src.optimantra_login import LOGIN_URL
 
 
 def validate_config(env):
+    if env.get("DATE_INPUT_PROBE_ENABLED") == "true" and env.get("DATE_FILTER_SMOKE_ENABLED") != "true":
+        raise RuntimeError("Date input probe requires date-filter smoke")
     if env.get("DATE_FILTER_SMOKE_ENABLED") == "true" and (env.get("NAVIGATION_SMOKE_ENABLED") != "true" or env.get("REPORT_SELECTION_SMOKE_ENABLED") != "true"):
         raise RuntimeError("Date filter smoke requires report selection and navigation")
     if env.get("REPORT_SELECTION_SMOKE_ENABLED") == "true" and env.get("NAVIGATION_SMOKE_ENABLED") != "true":
@@ -141,7 +143,32 @@ def run():
                         wait_for_prompt_in_frames(page, "Starting Date for Period")
                         stage = "verify_end_date_prompt"
                         wait_for_prompt_in_frames(page, "Ending Date for Period")
-                        print("PASS: Date filter prompts visible. No report run or exported.", flush=True)
+                        if os.environ.get("DATE_INPUT_PROBE_ENABLED") == "true":
+                            stage = "inspect_date_input_structure"
+                            matches = []
+                            for frame in page.frames:
+                                start = frame.get_by_text("Starting Date for Period", exact=False).first
+                                end = frame.get_by_text("Ending Date for Period", exact=False).first
+                                if start.count() and end.count():
+                                    if start.is_visible() and end.is_visible():
+                                        matches.append(frame)
+                            if len(matches) != 1:
+                                raise RuntimeError("Could not isolate one date-filter frame")
+                            frame = matches[0]
+                            visible_dates = frame.locator('input[type="date"]:visible').count()
+                            visible_text = frame.locator(
+                                'input[type="text"]:visible'
+                            ).count()
+                            print(
+                                "DATE_INPUT_STRUCTURE: "
+                                f"visible_date_inputs={visible_dates}; "
+                                f"visible_text_inputs={visible_text}. "
+                                "No input values inspected.",
+                                flush=True,
+                            )
+                            print("PASS: Date controls inspected; no report run.", flush=True)
+                        else:
+                            print("PASS: Date filter prompts visible. No report run or exported.", flush=True)
                     else:
                         print("PASS: Financial report selected. No report run or exported.", flush=True)
                 else:
