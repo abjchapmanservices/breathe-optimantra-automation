@@ -203,7 +203,21 @@ def open_export_dialog_smoke(page):
     )
     if len(controls) != 1:
         raise RuntimeError("Export toolbar control not unique or not ready")
-    controls[0].click(timeout=10000)
+    # The inspected HTML places the Export span inside a clickable
+    # mstrToolbarButton anchor. Click the anchor rather than its child span.
+    parent = controls[0].locator("xpath=..")
+    print(
+        "EXPORT_DIALOG_DIAGNOSTIC: phase=click_attempt; "
+        f"parent_anchor={str(parent.count() == 1 and parent.evaluate('(e) => e.tagName.toLowerCase() === \'a\'')).lower()}",
+        file=sys.stderr, flush=True,
+    )
+    if parent.count() != 1:
+        raise RuntimeError("Export toolbar parent not unique")
+    parent.click(timeout=10000)
+    print(
+        "EXPORT_DIALOG_DIAGNOSTIC: phase=click_complete",
+        file=sys.stderr, flush=True,
+    )
     # Only inspect UI labels, never report rows, values, or document source.
     deadline = time.monotonic() + 20
     while time.monotonic() < deadline:
