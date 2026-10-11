@@ -269,26 +269,35 @@ def open_export_dialog_smoke(page):
     # Inspect only export-option controls; never read report data.
     frame = dialog_frames[0]
     defaults = frame.evaluate("""() => {
-        const selects = [...document.querySelectorAll('select')];
-        const whole = selects.filter(select => {
-            const option = select.selectedOptions && select.selectedOptions[0];
-            return option && option.textContent.trim() === 'Whole report';
+        const wholeCount = [...document.querySelectorAll('select')]
+          .filter(el => el.selectedOptions?.[0]?.textContent.trim() === 'Whole report').length;
+        const radios = [...document.querySelectorAll('input[type="radio"]')];
+        const csvOptions = radios.filter(radio => {
+          // Match the shortest surrounding export-option container.
+          // No arbitrary page text or report rows are logged or returned.
+          let node = radio.parentElement;
+          for (let depth = 0; node && depth < 4; depth++, node = node.parentElement) {
+            const text = (node.textContent || '').trim().replace(/\\s+/g, ' ');
+            if (text.includes('CSV file format')) {
+              return !text.includes('Excel with plain text') &&
+                     !text.includes('Excel with formatting') &&
+                     !text.includes('Plain text');
+            }
+          }
+          return false;
         });
-        const csvTextNodes = [...document.querySelectorAll('label, td, span')]
-            .filter(node => node.children.length === 0
-                && node.textContent.trim() === 'CSV file format');
-        const csvChecked = csvTextNodes.some(node => {
-            const parent = node.closest('label, tr, td, div');
-            const radio = parent && parent.querySelector('input[type=radio]');
-            return !!(radio && radio.checked);
-        });
-        return {wholeCount: whole.length, csvLabels: csvTextNodes.length,
-                csvChecked};
+        return {
+          wholeCount,
+          csvOptionMatches: csvOptions.length,
+          csvChecked: csvOptions.length === 1 && csvOptions[0].checked,
+          totalRadios: radios.length
+        };
     }""")
     print(
         "EXPORT_DIALOG_DIAGNOSTIC: phase=default_selection; "
         f"whole_selected={defaults['wholeCount'] == 1}; "
-        f"csv_label_found={defaults['csvLabels'] > 0}; "
+        f"csv_options={defaults['csvOptionMatches']}; "
+        f"radio_count={defaults['totalRadios']}; "
         f"csv_checked={defaults['csvChecked']}",
         file=sys.stderr, flush=True,
     )
